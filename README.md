@@ -9,6 +9,8 @@ The policy for driving comes in with the driver.py file, which contains the main
 
 To setup:
 ```
+git clone https://github.com/sunfounder/picar-4wd
+git clone https://github.com/tensorflow/examples
 sh setup.sh
 ```
 and then run:
