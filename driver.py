@@ -59,7 +59,7 @@ class Driver:
         
         # Moving scanner
         self.angleIndex = 0
-        self.angles = [-45, 0, 45]
+        self.angles = [0] #[-30, -15, 0, 15, 30, 15, 0, -15]
 
         # Car position
         self.carAngle = 0
@@ -82,24 +82,29 @@ class Driver:
 
         angle = self.get_angle_to_detect()
         distance = car.get_distance_at(angle)
+        detectedAnything = True if distance > 0 else False
+    
         xFromCar, yFromCar = get_coordinates(angle, distance)
         positionFromCar = (xFromCar, yFromCar)
-        print('Distance from car:', positionFromCar)
+        print('Distance from car:', distance, ', ultrasound angle:', self.get_ultrasound_angle(),
+              'straight_d:', xFromCar)
         x, y = transform_coordinates(self.carAngle, self.carPosition, angle, distance)
         print('Global position:', (x, y))
 
         #target_direction, target_speed = navigation.get_target_direction()
-        if distance > 5:
+        if xFromCar > 25:
             self.currSpeed = 10
             car.forward(self.currSpeed)
+            self.currentMovement = Movement.FORWARD
         else:
             car.stop()
+            self.currentMovement = Movement.STOPPED
 
 
     def update_location(self):
         timeElapsed = time.time() - self.movementStartTime
         ANGLE_SCALER = 1
-        SPEED_SCALER = 1
+        SPEED_SCALER = 1/1000000000
         if self.currentMovement == Movement.FORWARD:
             self.carPosition[0] += SPEED_SCALER * self.currSpeed * timeElapsed * cos(radians(self.carAngle))
             self.carPosition[1] += SPEED_SCALER * self.currSpeed * timeElapsed * sin(radians(self.carAngle))
@@ -121,5 +126,9 @@ class Driver:
             sleep(2)
 
     def get_angle_to_detect(self):
-        angleIndex += 1
-        return angles[angleIndex]
+        self.angleIndex += 1
+        return self.get_ultrasound_angle()
+    
+    def get_ultrasound_angle(self):
+        return self.angles[self.angleIndex % len(self.angles)]
+
