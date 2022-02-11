@@ -1,8 +1,8 @@
 import time
 import cv2
-import picar_4wd as car
 from math import sin, cos, radians
 from enum import Enum
+import numpy as np
 
 STOP_SIGN_LABEL = 'stop sign'
 
@@ -41,6 +41,14 @@ def transform_coordinates(global_angle, global_position, local_angle, distance):
     return x, y
 
 
+def to_grid_space(global_measurement, cell_size, grid_origin):
+    # Negative Y is down in the matrix
+    result = (grid_origin[0] + int(global_measurement[0]/cell_size),
+            grid_origin[1] + int(-global_measurement[1]/cell_size))
+    if result[0] < 0 or result[1] < 0:
+        return None 
+    return result
+
 class Movement(Enum):
     STOPPED = 0
     FORWARD = 1
@@ -70,15 +78,20 @@ class Driver:
         self.currentMovement = Movement.STOPPED
         self.currSpeed = 0
 
+        # Grid
+        self.grid = np.zeros((1000, 1000))
+        self.gridLocation = (0, 0)
+        self.gridTarget = (500, 500)
+
     ''' Main entry point to driving '''
-    def drive_and_visualize(self, detections, image):
+    def drive_and_visualize(self, detections, image, car):
         self.update_location()
 
         if has_stop_sign(detections):
             display_stop_sign_detected(image)
             self.save_stop_sign_detected_time()
 
-        self.break_if_needed()
+        self.break_if_needed(car)
 
         angle = self.get_angle_to_detect()
         distance = car.get_distance_at(angle)
@@ -119,16 +132,41 @@ class Driver:
             self.stopSignDetectedTime = time.time()
 
 
-    def break_if_needed(self):
+    def break_if_needed(self, car):
         now = time.time()
         if self.stopSignDetectedTime + 3.0 >= now:
             car.stop()
             sleep(2)
 
+
     def get_angle_to_detect(self):
         self.angleIndex += 1
         return self.get_ultrasound_angle()
+
     
     def get_ultrasound_angle(self):
         return self.angles[self.angleIndex % len(self.angles)]
 
+
+    def update_grid(self, measurements):
+        for m in measurements:
+            self.update_grid_pixels(m)
+        return self.grid
+
+
+    def update_grid_pixels(self, pixels, clearance = 0):
+        eps = 1e-8
+        for pixelX, pixelY in pixels:
+            self.grid[pixelX, pixelY] = 1
+            xStart = max(pixelX - clearance, 0)
+            xEnd = min(pixelX + clearance + 1, self.grid.shape[0])
+            yStart = max(pixelY - clearance, 0)
+            yEnd = min(pixelY + clearance + 1, self.grid.shape[1])
+            for x in range(xStart, xEnd):
+                for y in range(yStart, yEnd):
+                    # Inside a circle of size clearance
+                    sqDist = (x-pixelX)*(x-pixelX)+(y-pixelY)*(y-pixelY)
+                    if sqDist - eps <= clearance*clearance:
+                        self.grid[x, y] = 1
+
+        return self.grid

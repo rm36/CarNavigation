@@ -22,6 +22,7 @@ from tflite.lite.examples.object_detector import ObjectDetectorOptions
 import utils
 
 import driver
+import picar_4wd as car
 
 def run(model: str, camera_id: int, width: int, height: int, num_threads: int) -> None:
   """Continuously run inference on images acquired from the camera.
@@ -79,7 +80,7 @@ def run(model: str, camera_id: int, width: int, height: int, num_threads: int) -
     image = utils.visualize(image, detections)
 
     # Run detection of obstacles and navigation.
-    driver.drive(detections, image)
+    driver.drive(detections, image, car)
 
     # Calculate the FPS
     if counter % fps_avg_frame_count == 0:
