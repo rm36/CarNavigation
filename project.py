@@ -17,8 +17,8 @@ import sys
 import time
 
 import cv2
-from tflite.lite.examples.object_detector import ObjectDetector
-from tflite.lite.examples.object_detector import ObjectDetectorOptions
+from object_detector import ObjectDetector
+from object_detector import ObjectDetectorOptions
 import utils
 
 import driver
@@ -60,7 +60,7 @@ def run(model: str, camera_id: int, width: int, height: int, num_threads: int) -
       max_results=3,
       enable_edgetpu=False)
   detector = ObjectDetector(model_path=model, options=options)
-  driver = Driver()
+  d = driver.Driver()
 
   # Continuously capture images from the camera and run inference
   while cap.isOpened():
@@ -80,7 +80,7 @@ def run(model: str, camera_id: int, width: int, height: int, num_threads: int) -
     image = utils.visualize(image, detections)
 
     # Run detection of obstacles and navigation.
-    driver.drive(detections, image, car)
+    d.drive_and_visualize(detections, image, car)
 
     # Calculate the FPS
     if counter % fps_avg_frame_count == 0:
@@ -97,7 +97,7 @@ def run(model: str, camera_id: int, width: int, height: int, num_threads: int) -
     # Stop the program if the ESC key is pressed.
     if cv2.waitKey(1) == 27:
       break
-    cv2.imshow('object_detector', image)
+    #cv2.imshow('object_detector', image)
 
   cap.release()
   cv2.destroyAllWindows()

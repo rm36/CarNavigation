@@ -1,3 +1,5 @@
 
 picar-4wd/
 tflite/
+*.pyc
+*.tflite

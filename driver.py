@@ -5,6 +5,9 @@ from enum import Enum
 import numpy as np
 
 STOP_SIGN_LABEL = 'stop sign'
+DISTANCE_PER_SECOND = 28 # cm / s
+MOTOR_POWER = -10 # The power needed to go forward at DISTANCE_PER_SECOND
+TIME_FOR_TURN_90 = 1.5 # Seconds of turn_right or turn_left
 
 # Helper functions for the Driver class.
 def has_stop_sign(detections):
@@ -49,11 +52,27 @@ def to_grid_space(global_measurement, cell_size, grid_origin):
         return None 
     return result
 
+def get_distance_moved(timeElapsed, speed):
+    if speed != MOTOR_POWER:
+        print('Going at an uncalibrated speed! Please calibrate for speed', speed)
+    return timeElapsed * DISTANCE_PER_SECOND
+
+def get_angle_moved(timeElapsed, speed):
+    if speed != MOTOR_POWER:
+        print('Going at an uncalibrated speed! Please calibrate for speed', speed)
+    return 90 * timeElapsed / TIME_FOR_TURN_90
+
 class Movement(Enum):
     STOPPED = 0
     FORWARD = 1
     TURN_LEFT = 2
     TURN_RIGHT = 3
+
+
+class CalibrationState(Enum):
+    UNNECESSARY = 0
+    PENDING = 1
+    COMPLETED = 2
 
 
 '''
@@ -83,8 +102,20 @@ class Driver:
         self.gridLocation = (0, 0)
         self.gridTarget = (500, 500)
 
+        # Calibration code
+        self.calibrationState = CalibrationState.PENDING
+        self.calibrationMovement = Movement.FORWARD # Edit this for test
+        self.calibrationTime = TIME_FOR_TURN_90
+        self.startMove = 0
+        
+
     ''' Main entry point to driving '''
     def drive_and_visualize(self, detections, image, car):
+
+        if self.calibrationState != CalibrationState.UNNECESSARY:
+            self.calibrate()
+            return
+        
         self.update_location()
 
         if has_stop_sign(detections):
@@ -106,7 +137,7 @@ class Driver:
 
         #target_direction, target_speed = navigation.get_target_direction()
         if xFromCar > 25:
-            self.currSpeed = 10
+            self.currSpeed = MOTOR_POWER
             car.forward(self.currSpeed)
             self.currentMovement = Movement.FORWARD
         else:
@@ -114,17 +145,35 @@ class Driver:
             self.currentMovement = Movement.STOPPED
 
 
+    def calibrate(self):
+        if self.calibrationState == CalibrationState.PENDING and self.currentMovement == Movement.STOPPED:
+            self.currentMovement = self.calibrationMovement
+            self.currSpeed = MOTOR_POWER
+            if self.calibrationMovement == Movement.TURN_RIGHT:
+                car.turn_right(self.currSpeed)
+            elif self.calibrationMovement == Movement.FORWARD:
+                car.forward(self.currSpeed)
+            self.startMove = time.time()
+        elif self.currentMovement == self.calibrationMovement:
+            elapsedTime = time.time() - self.startMove
+            if elapsedTime >= self.calibrationTime:
+                self.currentMovement = Movement.STOPPED
+                self.calibrationState = CalibrationState.COMPLETED
+                car.stop()
+                print('Elapsed time:', elapsedTime)
+                exit()
+
+
     def update_location(self):
         timeElapsed = time.time() - self.movementStartTime
-        ANGLE_SCALER = 1
-        SPEED_SCALER = 1/1000000000
         if self.currentMovement == Movement.FORWARD:
-            self.carPosition[0] += SPEED_SCALER * self.currSpeed * timeElapsed * cos(radians(self.carAngle))
-            self.carPosition[1] += SPEED_SCALER * self.currSpeed * timeElapsed * sin(radians(self.carAngle))
+            distance = get_distance_moved(timeElapsed, self.currSpeed)
+            self.carPosition[0] += distance * cos(radians(self.carAngle))
+            self.carPosition[1] += distance * sin(radians(self.carAngle))
         elif self.currentMovement == Movement.TURN_LEFT:
-            self.carAngle -= ANGLE_SCALER * self.currSpeed * timeElapsed
+            self.carAngle -= get_angle_moved(timeElapsed, self.currSpeed)
         elif self.currentMovement == Movement.TURN_RIGHT:
-            self.carAngle += ANGLE_SCALER * self.currSpeed * timeElapsed
+            self.carAngle += get_angle_moved(timeElapsed, self.currSpeed)
 
 
     def save_stop_sign_detected_time(self):
