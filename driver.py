@@ -52,13 +52,13 @@ def to_grid_space(global_measurement, cell_size, grid_origin):
         return None 
     return result
 
-def get_distance_moved(timeElapsed, speed):
-    if speed != MOTOR_POWER:
+def get_distance_moved(timeElapsed, power):
+    if power != MOTOR_POWER:
         print('Going at an uncalibrated speed! Please calibrate for speed', speed)
     return timeElapsed * DISTANCE_PER_SECOND
 
-def get_angle_moved(timeElapsed, speed):
-    if speed != MOTOR_POWER:
+def get_angle_moved(timeElapsed, power):
+    if power != MOTOR_POWER:
         print('Going at an uncalibrated speed! Please calibrate for speed', speed)
     return 90 * timeElapsed / TIME_FOR_TURN_90
 
@@ -95,16 +95,16 @@ class Driver:
         # Car movement
         self.movementStartTime = 0
         self.currentMovement = Movement.STOPPED
-        self.currSpeed = 0
+        self.currPower = 0
 
         # Grid
         self.grid = np.zeros((1000, 1000))
         self.gridLocation = (0, 0)
         self.gridTarget = (500, 500)
 
-        # Calibration code
-        self.calibrationState = CalibrationState.PENDING
-        self.calibrationMovement = Movement.FORWARD # Edit this for test
+        # Calibration code. Edit the state and movement to calibrate below
+        self.calibrationState = CalibrationState.UNNECESSARY
+        self.calibrationMovement = Movement.FORWARD
         self.calibrationTime = TIME_FOR_TURN_90
         self.startMove = 0
         
@@ -137,8 +137,8 @@ class Driver:
 
         #target_direction, target_speed = navigation.get_target_direction()
         if xFromCar > 25:
-            self.currSpeed = MOTOR_POWER
-            car.forward(self.currSpeed)
+            self.currPower = MOTOR_POWER
+            car.forward(self.currPower)
             self.currentMovement = Movement.FORWARD
         else:
             car.stop()
@@ -148,11 +148,11 @@ class Driver:
     def calibrate(self):
         if self.calibrationState == CalibrationState.PENDING and self.currentMovement == Movement.STOPPED:
             self.currentMovement = self.calibrationMovement
-            self.currSpeed = MOTOR_POWER
+            self.currPower = MOTOR_POWER
             if self.calibrationMovement == Movement.TURN_RIGHT:
-                car.turn_right(self.currSpeed)
+                car.turn_right(self.currPower)
             elif self.calibrationMovement == Movement.FORWARD:
-                car.forward(self.currSpeed)
+                car.forward(self.currPower)
             self.startMove = time.time()
         elif self.currentMovement == self.calibrationMovement:
             elapsedTime = time.time() - self.startMove
@@ -167,13 +167,13 @@ class Driver:
     def update_location(self):
         timeElapsed = time.time() - self.movementStartTime
         if self.currentMovement == Movement.FORWARD:
-            distance = get_distance_moved(timeElapsed, self.currSpeed)
+            distance = get_distance_moved(timeElapsed, self.currPower)
             self.carPosition[0] += distance * cos(radians(self.carAngle))
             self.carPosition[1] += distance * sin(radians(self.carAngle))
         elif self.currentMovement == Movement.TURN_LEFT:
-            self.carAngle -= get_angle_moved(timeElapsed, self.currSpeed)
+            self.carAngle -= get_angle_moved(timeElapsed, self.currPower)
         elif self.currentMovement == Movement.TURN_RIGHT:
-            self.carAngle += get_angle_moved(timeElapsed, self.currSpeed)
+            self.carAngle += get_angle_moved(timeElapsed, self.currPower)
 
 
     def save_stop_sign_detected_time(self):
