@@ -24,7 +24,7 @@ class TestDriver(unittest.TestCase):
 
     def test_has_stop_sign(self):
         fakeCategory = FakeCategory()
-        fakeCategory.set_label('stop sign')
+        fakeCategory.set_label('person')
         fakeDetection = FakeDetection()
         fakeDetection.add_category(fakeCategory)
         detections = []
@@ -84,13 +84,8 @@ class TestDriver(unittest.TestCase):
     def test_to_grid_space(self):
         global_measurement = (12, -18)
         (gridX, gridY) = driver.to_grid_space(global_measurement, cell_size=5, grid_origin=(5,5))
-        self.assertEqual(gridX, 5+2)
-        self.assertEqual(gridY, 5+3)
-
-    def test_to_grid_space(self):
-        global_measurement = (12, 30)
-        result = driver.to_grid_space(global_measurement, cell_size=5, grid_origin=(5,5))
-        self.assertEqual(result, None)
+        self.assertEqual(int(gridX), 5+2)
+        self.assertEqual(int(gridY), 5+3)
 
 if __name__ == '__main__':
     unittest.main()
