@@ -24,7 +24,7 @@ class TestDriver(unittest.TestCase):
 
     def test_has_stop_sign(self):
         fakeCategory = FakeCategory()
-        fakeCategory.set_label('person')
+        fakeCategory.set_label(driver.STOP_SIGN_LABEL)
         fakeDetection = FakeDetection()
         fakeDetection.add_category(fakeCategory)
         detections = []
@@ -47,15 +47,6 @@ class TestDriver(unittest.TestCase):
         x, y = driver.transform_coordinates(global_angle, global_position, local_angle, distance)
         self.assertAlmostEqual(x, 2)
         self.assertAlmostEqual(y, 9)
-
-    def test_driver_makes_big_empty_grid(self):
-        d = driver.Driver()
-        grid = d.update_grid([])
-        self.assertTrue(grid.shape[0] > 100)
-        self.assertTrue(grid.shape[1] > 100)
-        for i in range(grid.shape[0]):
-            for j in range(grid.shape[1]):
-                self.assertEqual(grid[i,j], 0)
 
     def test_one_measurement(self):
         d = driver.Driver()
