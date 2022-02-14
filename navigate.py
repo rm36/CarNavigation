@@ -15,6 +15,11 @@ class Node:
             self.path = copy.deepcopy(parentNode.path)
         self.path.append((x,y))
 
+        self.distMoved = 0
+        if parentNode is not None:
+            self.distMoved = parentNode.distMoved
+            self.distMoved += abs(parentNode.x - x) + abs(parentNode.y - y)
+
     def __lt__(self, other):
         return self.x < other.x
 
@@ -74,5 +79,5 @@ def a_star_search(grid, startPosition, endPosition):
                 print('adding:', (succesorDiagDistance, (succesorNode.x, succesorNode.y)))
 
             alreadyAdded.add((succX, succY))
-            nodePriorityQueue.put((succesorDiagDistance, succesorNode))
+            nodePriorityQueue.put((succesorDiagDistance + succesorNode.distMoved/2, succesorNode))
     return None

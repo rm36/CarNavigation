@@ -50,14 +50,15 @@ class TestDriver(unittest.TestCase):
 
     def test_one_measurement(self):
         d = driver.Driver()
-        grid = d.update_grid_pixels([(0,0), (0,1)], clearance=0)
+        grid = d.update_grid_pixel((0,0), clearance=0)
+        grid = d.update_grid_pixel((0,1), clearance=0)
         self.assertEqual(grid[0,0], 1)
         self.assertEqual(grid[0,1], 1)
         self.assertEqual(grid[0,2], 0)
 
     def test_one_big_measurement(self):
         d = driver.Driver()
-        grid = d.update_grid_pixels([(0,0)], clearance=5)
+        grid = d.update_grid_pixel((0,0), clearance=5)
         self.assertEqual(grid[0,0], 1)
         self.assertEqual(grid[0,5], 1)
         self.assertEqual(grid[0,6], 0)
@@ -67,7 +68,9 @@ class TestDriver(unittest.TestCase):
 
     def test_big_measurements(self):
         d = driver.Driver()
-        grid = d.update_grid_pixels([(0,0), (5,0), (10, 0)], clearance=5)
+        grid = d.update_grid_pixel((0,0), clearance=5)
+        grid = d.update_grid_pixel((5,0), clearance=5)
+        grid = d.update_grid_pixel((10,0), clearance=5)
         for i in range(15):
             self.assertEqual(grid[i,0], 1)
         self.assertEqual(grid[16,0], 0)

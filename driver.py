@@ -3,12 +3,12 @@ import cv2
 from math import sin, cos, radians, degrees, atan2
 from enum import Enum
 import numpy as np
-from navigation import Navigation
+from navigate import a_star_search
 
 STOP_SIGN_LABEL = 'teddy bear' # What I can use at home as a stop sign :)
 DISTANCE_PER_SECOND = 28 # cm / s
 MOTOR_POWER = -10 # The power needed to go forward at DISTANCE_PER_SECOND
-TIME_FOR_TURN_90 = 1.5 # Seconds of turn_right or turn_left
+TIME_FOR_TURN_90 = 1.4 # Seconds of turn_right or turn_left
 
 # Helper functions for the Driver class.
 def has_stop_sign(detections):
@@ -70,9 +70,15 @@ def get_angle_moved(timeElapsed, power):
         print('Going at an uncalibrated speed! Please calibrate for speed', speed)
     return 90 * timeElapsed / TIME_FOR_TURN_90
 
-def find_min_ranges(grid, carPosition, targetPosition):
-    minX, minY = int(min(carPosition[0], targetPosition[0])), int(min(carPosition[1], targetPosition[1]))
-    maxX, maxY = int(max(carPosition[0], targetPosition[0])), int(max(carPosition[1], targetPosition[1]))
+def find_min_ranges(grid, mustIncludeCells):
+    minX, minY = 10000, 10000
+    maxX,maxY = 0, 0
+    for (i, j) in mustIncludeCells:
+        minX = i if i < minX else minX
+        maxX = i if i > maxX else maxX
+        minY = j if j < minY else minY
+        maxY = j if j > maxY else maxY
+
     for i in range(grid.shape[0]):
         for j in range(grid.shape[1]):
             if grid[i, j] > 0:
@@ -83,23 +89,37 @@ def find_min_ranges(grid, carPosition, targetPosition):
     return minX, maxX, minY, maxY
 
 def print_grid(grid, carPosition, targetPosition):
-    minX, maxX, minY, maxY = find_min_ranges(grid, carPosition, targetPosition)
+    start = to_index(carPosition)
+    end = to_index(targetPosition)
+    minX, maxX, minY, maxY = find_min_ranges(grid, mustIncludeCells = [start, end])
     print('----GRID----', minX, minY)
     subGrid = np.copy(grid[minX:maxX+1, minY:maxY+1])
-    localCarPosition = (int(carPosition[0]) - minX, int(carPosition[1]) - minY)
-    localTargetPosition = (int(targetPosition[0]) - minX, int(targetPosition[1]) - minY)
-    subGrid[localCarPosition[0], localCarPosition[1]] = 2
-    subGrid[localTargetPosition[0], localTargetPosition[1]] = 3
+    localStart = (start[0] - minX, start[1] - minY)
+    localEnd = (end[0] - minX, end[1] - minY)
+    subGrid[localStart] = 2
+    subGrid[localEnd] = 3
     print(np.flip(subGrid, axis=0))
 
+def print_path(grid, carPosition, targetPosition, path):
+    start = to_index(carPosition)
+    end = to_index(targetPosition)
+    mustIncludeCells = [start, end]
+    mustIncludeCells.extend(path)
+    minX, maxX, minY, maxY = find_min_ranges(grid, mustIncludeCells)
+    print('----GRID PATH----', minX, minY)
+    subGrid = np.copy(grid[minX:maxX+1, minY:maxY+1])
+    localStart = (start[0] - minX, start[1] - minY)
+    localEnd = (end[0] - minX, end[1] - minY)
+    subGrid[localStart] = 2
+    subGrid[localEnd] = 3
+    for cell in path:
+        if cell != start and cell != end:
+            localCell = (cell[0] - minX, cell[1] - minY)
+            subGrid[localCell] = 5
+    print(np.flip(subGrid, axis=0))
 
-lastTimePrintedGrid = None
-def print_grid_every_N_seconds(grid, carPosition, targetPosition, nSeconds):
-    global lastTimePrintedGrid
-
-    if not lastTimePrintedGrid or (time.time() - lastTimePrintedGrid) > nSeconds:
-        lastTimePrintedGrid = time.time()
-        print_grid(grid, carPosition, targetPosition)
+def to_index(coor):
+    return (int(coor[0]), int(coor[1]))
 
 class Movement(Enum):
     STOPPED = 0
@@ -124,23 +144,25 @@ class Driver:
         self.stopSignDetectedTime = None
 
         # Target position
-        self.targetGlobalPosition = (100.0, 0.0)  # cm
+        self.targetGlobalPosition = (200.0, 280.0)  # cm
 
         # Grid
-        size = (250,250)
+        size = (500,500)
         self.grid = np.zeros(size)
-        self.gridOrigin = tuple(np.divide(size, 2))
+        self.gridOrigin = (0,450)#(tuple(np.divide(size, 2)))
         self.cellSize = 5 # cm per square side
         self.targetGridPosition = to_grid_space(self.targetGlobalPosition, self.cellSize, self.gridOrigin)
 
         # Moving ultrasound scanner. Loops through all angles
         self.angleIndex = 0
-        self.angles = [-80, -60, -40, -20, 0, 20, 40, 60, 80]
+        self.angles = [50, 30, 15, 0]
+        self.lastScannedPoint = None
 
         # Car movement
         self.movementStartTime = 0
         self.currentMovement = Movement.STOPPED
         self.currPower = 0
+        self.startTime = None
 
         # Car position
         self.carAngle = 0
@@ -154,13 +176,13 @@ class Driver:
         self.startMove = 0
 
         # Kill switch to avoid hitting people in case of a bug
-        self.killSwitchTime = 5 # Seconds. value <= 0 means NO KILL SWITCH
+        self.killSwitchTime = -1 # Seconds. value <= 0 means NO KILL SWITCH
         self.killSwitchStartTime = None
 
         # Printing
         self.lastPrintedStatus = None
 
-        np.set_printoptions(edgeitems=30, linewidth=100000, formatter=dict(float=lambda x: "%.3g" % x))
+        np.set_printoptions(edgeitems=50, linewidth=100000, formatter=dict(float=lambda x: "%.3g" % x))
 
     ''' Main entry point to driving '''
     def drive_and_visualize(self, detections, image, car):
@@ -175,7 +197,18 @@ class Driver:
         if has_stop_sign(detections):
             # Only display if not ssh'ing
             # display_stop_sign_detected(image)
-            print('Stop sign detected! will break.')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=================                                     ===================')
+            print('=================   PENGUIN  DETECTED       BREAKING  ===================')
+            print('=================                                     ===================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
             self.save_stop_sign_detected_time()
 
         self.break_if_needed(car)
@@ -248,10 +281,10 @@ class Driver:
             return
 
         now = time.time()
-        if self.stopSignDetectedTime and (self.stopSignDetectedTime + 10.0) >= now:
+        if self.stopSignDetectedTime and (self.stopSignDetectedTime + 5.0) >= now:
             print('Saw a stop sign! Breaking...')
             car.stop()
-            time.sleep(1.5)
+            time.sleep(2.0)
             self.stopSignDetectedTime = -1
 
 
@@ -261,49 +294,87 @@ class Driver:
 
 
     def update_grid_with_ultrasound_detections(self, angle, distance):
-        print('Distance from car:', distance, ', ultrasound angle:', self.get_ultrasound_angle())
+        #print('Distance from car:', distance, ', ultrasound angle:', self.get_ultrasound_angle())
         x, y = transform_coordinates(self.carAngle, self.carPosition, angle, distance)
         i, j = to_grid_space((x, y), self.cellSize, self.gridOrigin)
-        print('Grid ultrasound:', (i,j))
-        self.update_grid_pixels([(i, j)], clearance = 3)
+        #print('Grid ultrasound:', (i,j))
+
+        if self.lastScannedPoint is not None:
+            (lastX, lastY) = self.lastScannedPoint
+            diagDistance = max(abs(i - lastX), abs(j - lastY))
+            if diagDistance * self.cellSize < 60: # cm is the smallest hole to navigate through
+                # Fill in the mid point to avoid gaps
+                midpoint = ((lastX + i) / 2, (lastY + j) / 2)
+                self.update_grid_pixel(midpoint, clearance = 5)
+
+        # Clear the empty space that should be empty
+        midpointFromCar = ((i + self.carGridPosition[0])/2, (j + self.carGridPosition[1])/2)
+        self.update_grid_pixel(midpointFromCar, clearance = 3, value = 0)
+        midpointFromCar = ((i + self.carGridPosition[0]*3)/4, (j + self.carGridPosition[1]*3)/4)
+        self.update_grid_pixel(midpointFromCar, clearance = 3, value = 0)
+        self.update_grid_pixel(self.carGridPosition, clearance = 3, value = 0)
+
+        # Fill the space detected
+        self.update_grid_pixel((i, j), clearance = 5)
+        self.lastScannedPoint = (i, j)
 
     
     def get_ultrasound_angle(self):
         return self.angles[self.angleIndex % len(self.angles)]
 
 
-    def update_grid_pixels(self, pixels, clearance = 0):
-        eps = 1e-8
-        for pixelX, pixelY in pixels:
-            self.grid[int(pixelX), int(pixelY)] = 1
-            xStart = int(max(pixelX - clearance, 0))
-            xEnd = int(min(pixelX + clearance + 1, self.grid.shape[0]))
-            yStart = int(max(pixelY - clearance, 0))
-            yEnd = int(min(pixelY + clearance + 1, self.grid.shape[1]))
-            for x in range(xStart, xEnd):
-                for y in range(yStart, yEnd):
-                    # Inside a circle of size clearance
-                    sqDist = (x-pixelX)*(x-pixelX)+(y-pixelY)*(y-pixelY)
-                    if sqDist - eps <= clearance*clearance:
-                        self.grid[x, y] = 1
+    def set_grid_pixel_value(self, coor, value):
+        if coor[0] < 0 or coor[1] < 0 or coor[0] >= self.grid.shape[0] or coor[1] >= self.grid.shape[1]:
+            return
+        self.grid[coor] = value
 
-        # print_grid_every_N_seconds(self.grid, self.carGridPosition, self.targetGridPosition, nSeconds = 3)
+
+    def update_grid_pixel(self, pixel, clearance = 0, value = 1):
+        eps = 1e-8
+        (pixelX, pixelY) = (int(pixel[0]), int(pixel[1]))
+        self.set_grid_pixel_value((pixelX, pixelY), value)
+        xStart = max(pixelX - clearance, 0)
+        xEnd = min(pixelX + clearance + 1, self.grid.shape[0])
+        yStart = max(pixelY - clearance, 0)
+        yEnd = min(pixelY + clearance + 1, self.grid.shape[1])
+        for x in range(xStart, xEnd):
+            for y in range(yStart, yEnd):
+                # Inside a circle of size clearance
+                sqDist = (x-pixelX)*(x-pixelX)+(y-pixelY)*(y-pixelY)
+                if sqDist - eps <= clearance*clearance:
+                    self.set_grid_pixel_value((x, y), value)
         return self.grid
 
 
     def get_car_target_direction(self):
-        # This should call the A* algorithm.
-        deltaGridSpace = tuple(np.subtract(self.targetGridPosition, self.carGridPosition))
+        idealPath = a_star_search(self.grid, to_index(self.carGridPosition), to_index(self.targetGridPosition))
+
+        if not idealPath:
+            print('Something went wrong, no path to end')
+            print_grid(self.grid, self.carGridPosition, self.targetGridPosition)
+            size = (500,500)
+            self.grid = np.zeros(size)
+            idealPath = []
+
+        targetCell = self.targetGridPosition
+        if len(idealPath) < 8:
+            print('Short path!!!', repr(idealPath))
+        else:
+            targetCell = idealPath[7]
+
+        deltaGridSpace = tuple(np.subtract(targetCell, self.carGridPosition))
         deltaCm = to_metric_space(deltaGridSpace, self.cellSize)
         angle = degrees(atan2(deltaCm[1], deltaCm[0]))
 
-        if self.lastPrintedStatus is None or (time.time() - self.lastPrintedStatus) > 2.0:
+        if self.lastPrintedStatus is None or (time.time() - self.lastPrintedStatus) > 12.0:
             self.lastPrintedStatus = time.time()
             print('----CAR STATUS----')
-            print('Target:',self.targetGridPosition, 'Car:', self.carGridPosition,
+            print('Target:', targetCell, 'Car:', self.carGridPosition,
                   'DeltaGridSpace:', deltaGridSpace)
             print('Currently going at angle:', self.carAngle, 'Should go at angle:', angle,
                   'Car position:', self.carPosition, 'Delta in cm:', deltaCm)
+
+            print_path(self.grid, self.carGridPosition, self.targetGridPosition, idealPath)
 
         targetLocalAngle = angle - self.carAngle
         return targetLocalAngle
@@ -315,14 +386,14 @@ class Driver:
             return
         
         timeForTurn = absAngle * TIME_FOR_TURN_90 / 90
-        print('turning ', angle, 'degrees, for seconds:', timeForTurn)
+        #print('turning ', angle, 'degrees, for seconds:', timeForTurn)
         
         if angle > 0:
             car.turn_left(MOTOR_POWER)
         else:
             car.turn_right(MOTOR_POWER)
         time.sleep(timeForTurn)
-        print('done turning')
+        #print('done turning')
 
         # Update state
         self.carAngle += angle
@@ -333,9 +404,25 @@ class Driver:
             self.currPower = 0
             car.stop()
             self.currentMovement = Movement.STOPPED
-            print('Got close enough!')
-            print_grid(self.grid, self.carGridPosition, self.targetGridPosition)
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=================                                       =================')
+            print('=================   ARRIVED AT DESTINATION... STOPPING  =================')
+            print('=================                                       =================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            print('=========================================================================')
+            #print_grid(self.grid, self.carGridPosition, self.targetGridPosition)
             exit()
+        elif self.just_started():
+            self.currPower = 0
+            car.stop()
+            self.currentMovement = Movement.STOPPED
+            print_grid(self.grid, self.carGridPosition, self.targetGridPosition)
         else:
             self.currPower = MOTOR_POWER
             car.forward(self.currPower)
@@ -349,3 +436,8 @@ class Driver:
         if deltaCm[0] < 20 and deltaCm[1] < 20:
             return True
         return False
+
+    def just_started(self):
+        if self.startTime is None:
+            self.startTime = time.time()
+        return (time.time() - self.startTime) < 5
